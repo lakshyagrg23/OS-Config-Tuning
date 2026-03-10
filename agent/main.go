@@ -56,6 +56,9 @@ func main() {
 	}
 	fmt.Printf("Loaded baseline with %d sysctl parameter(s) from %s\n", len(policy.Sysctl), baselinePath)
 
+	// Validate current system state against baseline before eBPF monitoring starts.
+	RunStartupValidation(policy)
+
 	// Parse the compiled BPF object file.
 	spec, err := ebpf.LoadCollectionSpec(objPath)
 	if err != nil {
