@@ -1,0 +1,4 @@
+sysctl:
+  vm.swappiness: "10"
+  kernel.randomize_va_space: "2"
+  net.ipv4.ip_forward: "0"
