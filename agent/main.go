@@ -111,6 +111,10 @@ func main() {
 		rd.Close()
 	}()
 
+	// Create the event queue and start the worker pool before reading events.
+	eventQueue := NewEventQueue()
+	workersDone := StartWorkerPool(eventQueue, policy)
+
 	fmt.Println("Monitoring /proc/sys configuration changes... (Press Ctrl+C to stop)")
 
 	for {
@@ -158,31 +162,16 @@ func main() {
 
 		fmt.Printf("PID=%d Process=%s Access=%s File=%s\n", e.Pid, comm, access, filename)
 
-		// --- Policy engine pipeline (WRITE events only) ---
-		if !isWrite {
-			continue
+		// Push a decoded WorkEvent into the queue; workers handle policy evaluation.
+		eventQueue <- WorkEvent{
+			Pid:      e.Pid,
+			Process:  comm,
+			Access:   access,
+			FilePath: filename,
 		}
-
-		// 1. Resolve file path → sysctl parameter name.
-		param := ResolveParameter(filename)
-		if param == "" {
-			continue
-		}
-
-		// 2. Look up expected value in baseline; skip if not tracked.
-		expected, ok := policy.Sysctl[param]
-		if !ok {
-			continue
-		}
-
-		// 3. Read the current runtime value from /proc/sys.
-		actual, err := ReadSysctlValue(param)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "error reading %s: %v\n", param, err)
-			continue
-		}
-
-		// 4. Compare and report drift.
-		EvaluateDrift(param, expected, actual, comm, e.Pid)
 	}
+
+	// Signal workers that no more events are coming, then wait for them to drain.
+	close(eventQueue)
+	workersDone.Wait()
 }
