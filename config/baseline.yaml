@@ -1,4 +1,10 @@
 sysctl:
-  vm.swappiness: "10"
-  kernel.randomize_va_space: "2"
-  net.ipv4.ip_forward: "0"
+  vm.swappiness:
+    value: "10"
+    remediation: auto
+  kernel.randomize_va_space:
+    value: "2"
+    remediation: auto
+  net.ipv4.ip_forward:
+    value: "0"
+    remediation: alert

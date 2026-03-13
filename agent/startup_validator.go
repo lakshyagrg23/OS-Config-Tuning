@@ -11,21 +11,21 @@ func RunStartupValidation(policy *Policy) {
 	fmt.Println("--- Startup Baseline Validation ---")
 	driftFound := false
 
-	for param, expected := range policy.Sysctl {
+	for param, policyEntry := range policy.Sysctl {
 		actual, err := ReadSysctlValue(param)
 		if err != nil {
 			fmt.Printf("  [warn] cannot read %s: %v\n", param, err)
 			continue
 		}
 
-		if actual != expected {
+		if actual != policyEntry.Value {
 			driftFound = true
 			fmt.Printf(
 				"\n⚠  CONFIGURATION DRIFT DETECTED (Startup Validation)\n"+
 					"  Parameter: %s\n"+
 					"  Expected : %s\n"+
 					"  Actual   : %s\n",
-				param, expected, actual,
+				param, policyEntry.Value, actual,
 			)
 		}
 	}

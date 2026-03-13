@@ -5,9 +5,10 @@ import "fmt"
 // EvaluateDrift compares the actual runtime value of a sysctl parameter
 // against the expected baseline value and prints a drift alert when they
 // differ.  process and pid are included in the alert for attribution.
-func EvaluateDrift(param, expected, actual, process string, pid uint32) {
+// Returns true if drift was detected, false otherwise.
+func EvaluateDrift(param, expected, actual, process string, pid uint32) bool {
 	if actual == expected {
-		return
+		return false
 	}
 	fmt.Printf(
 		"\n⚠  CONFIGURATION DRIFT DETECTED\n"+
@@ -18,4 +19,5 @@ func EvaluateDrift(param, expected, actual, process string, pid uint32) {
 			"  PID      : %d\n\n",
 		param, expected, actual, process, pid,
 	)
+	return true
 }

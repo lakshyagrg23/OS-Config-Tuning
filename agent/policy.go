@@ -7,9 +7,16 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// SysctlPolicy defines the baseline value and remediation strategy for a
+// single sysctl parameter.
+type SysctlPolicy struct {
+	Value       string `yaml:"value"`
+	Remediation string `yaml:"remediation"`
+}
+
 // Policy holds the baseline configuration loaded from baseline.yaml.
 type Policy struct {
-	Sysctl map[string]string `yaml:"sysctl"`
+	Sysctl map[string]SysctlPolicy `yaml:"sysctl"`
 }
 
 // LoadPolicy parses the YAML file at path and returns a Policy.
@@ -23,7 +30,7 @@ func LoadPolicy(path string) (*Policy, error) {
 		return nil, fmt.Errorf("parse policy file: %w", err)
 	}
 	if p.Sysctl == nil {
-		p.Sysctl = make(map[string]string)
+		p.Sysctl = make(map[string]SysctlPolicy)
 	}
 	return &p, nil
 }
