@@ -1,10 +1,76 @@
+version: v1
+
+description: >
+  Security-focused sysctl baseline enforcing critical kernel and network
+  hardening parameters. Designed for safe autonomous remediation.
+
+global:
+  default_cooldown: 30s
+  decision_thresholds:
+    alert: 5       # warn on score >= 5 (concerning risk)
+    remediate: 8   # auto-fix on score >= 8 (high risk)
+
+trusted_processes:
+  - systemd
+  - kubelet
+  - dockerd
+
 sysctl:
-  vm.swappiness:
-    value: "10"
-    remediation: auto
+
   kernel.randomize_va_space:
-    value: "2"
+    expected: "2"
+    category: security
+    criticality: high
     remediation: auto
+    cooldown: 30s
+
+  kernel.kptr_restrict:
+    expected: "2"
+    category: security
+    criticality: high
+    remediation: auto
+    cooldown: 30s
+
+  kernel.dmesg_restrict:
+    expected: "1"
+    category: security
+    criticality: high
+    remediation: auto
+    cooldown: 30s
+
+  fs.suid_dumpable:
+    expected: "0"
+    category: security
+    criticality: high
+    remediation: auto
+    cooldown: 30s
+
   net.ipv4.ip_forward:
-    value: "0"
-    remediation: alert
+    expected: "0"
+    category: security
+    criticality: high
+    remediation: auto
+    cooldown: 30s
+    allow_processes:
+      - kube-proxy
+
+  net.ipv4.conf.all.accept_redirects:
+    expected: "0"
+    category: security
+    criticality: high
+    remediation: auto
+    cooldown: 30s
+
+  net.ipv4.conf.all.send_redirects:
+    expected: "0"
+    category: security
+    criticality: high
+    remediation: auto
+    cooldown: 30s
+
+  net.ipv4.tcp_syncookies:
+    expected: "1"
+    category: security
+    criticality: high
+    remediation: auto
+    cooldown: 30s
