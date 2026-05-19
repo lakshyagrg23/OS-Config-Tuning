@@ -1,6 +1,8 @@
 package controlplane
 
 import (
+	"bytes"
+	"io"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -71,6 +73,9 @@ func (c *ControlPlaneClient) SendHeartbeat(ctx context.Context, hb HeartbeatRequ
 	}
 	req.Header.Set("Content-Type", "application/json")
 	r, err := c.Client.Do(req)
+	fmt.Println("@@@@")
+	fmt.Println(r)
+	fmt.Println(r.Status)
 	if err != nil {
 		return err
 	}
@@ -83,27 +88,41 @@ func (c *ControlPlaneClient) SendHeartbeat(ctx context.Context, hb HeartbeatRequ
 
 // UploadEvent posts an event payload to /events.
 func (c *ControlPlaneClient) UploadEvent(ctx context.Context, payload interface{}) error {
-	if c == nil || c.BaseURL == "" {
-		return fmt.Errorf("control plane client not configured")
-	}
-	b, err := json.Marshal(payload)
-	if err != nil {
-		return err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.BaseURL+"/events", strings.NewReader(string(b)))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	r, err := c.Client.Do(req)
-	if err != nil {
-		return err
-	}
-	r.Body.Close()
-	if r.StatusCode < 200 || r.StatusCode >= 300 {
-		return fmt.Errorf("upload failed: %s", r.Status)
-	}
-	return nil
+    if c == nil || c.BaseURL == "" {
+        return fmt.Errorf("control plane client not configured")
+    }
+    
+    b, err := json.Marshal(payload)
+    if err != nil {
+        return err
+    }
+    
+    req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.BaseURL+"/events", bytes.NewReader(b))
+    if err != nil {
+        return err
+    }
+    req.Header.Set("Content-Type", "application/json")
+    
+    r, err := c.Client.Do(req)
+    if err != nil {
+        return err // Check the network/transport error FIRST before reading 'r'
+    }
+    defer r.Body.Close() // Ensure the body always closes to prevent socket leaks
+
+    // If things went wrong, read the response body to see the server's message
+    if r.StatusCode < 200 || r.StatusCode >= 300 {
+        bodyBytes, readErr := io.ReadAll(r.Body)
+        if readErr != nil {
+            return fmt.Errorf("upload failed with status %s (could not read response body: %v)", r.Status, readErr)
+        }
+        
+        // Print the precise validation errors coming from Express
+        fmt.Printf("--- UPLOAD FAILED DETAILS ---\nStatus: %s\nResponse: %s\n-----------------------------\n", r.Status, string(bodyBytes))
+        
+        return fmt.Errorf("upload failed: %s - %s", r.Status, string(bodyBytes))
+    }
+    
+    return nil
 }
 
 // LogControlPlaneWarning logs a non-fatal warning about control-plane failures.

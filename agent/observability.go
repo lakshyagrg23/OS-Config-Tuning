@@ -28,14 +28,14 @@ type TraceLog struct {
 	Allowed     bool   `json:"allowed"`
 
 	// Decision phase
-	DecisionAction       string   `json:"decision_action"` // "allow", "alert", or "remediate"
-	Score                int      `json:"score"`
-	BaseScore            int      `json:"base_score"`
-	RiskMultiplier       float64  `json:"risk_multiplier"`
-	AnomalyMultiplier    float64  `json:"anomaly_multiplier"`
-	BurstMultiplier      float64  `json:"burst_multiplier"`
-	ReputationMultiplier float64  `json:"reputation_multiplier"`
-	Reasons              []string `json:"reasons"`
+	DecisionAction       string   `json:"decisionAction"` // <-- CHANGED
+    Score                int      `json:"score"`
+    BaseScore            int      `json:"base_score"`
+    RiskMultiplier       float64  `json:"risk_multiplier"`
+    AnomalyMultiplier    float64  `json:"anomaly_multiplier"`
+    BurstMultiplier      float64  `json:"burst_multiplier"`
+    ReputationMultiplier float64  `json:"reputation_multiplier"`
+    Reasons              []string `json:"reasons"`
 
 	// Streaming intelligence (optional)
 	IntelEnabled bool `json:"intel_enabled"`
@@ -75,15 +75,16 @@ type TraceLog struct {
 	ProcessConflictAssocCount    int64   `json:"process_conflict_assoc_count"`
 
 	// Cooldown interaction
-	CooldownApplied bool `json:"cooldown_applied"`
-	CooldownWindow  int  `json:"cooldown_window_ms"` // Window duration in milliseconds
+	// Cooldown interaction
+    CooldownApplied bool `json:"cooldownApplied"` // <-- CHANGED
+    CooldownWindow  int  `json:"cooldown_window_ms"` 
 
-	// Conflict detection
-	ConflictDetected  bool `json:"conflict_detected"`
-	ConflictThreshold int  `json:"conflict_threshold,omitempty"` // Only if detected
+    // Conflict detection
+    ConflictDetected  bool `json:"conflictDetected"` // <-- CHANGED
+    ConflictThreshold int  `json:"conflict_threshold,omitempty"` 
 
-	// Final disposition
-	FinalAction string `json:"final_action"` // Action after cooldown + conflict adjustments
+    // Final disposition
+    FinalAction string `json:"finalAction"` // <-- CHANGE
 }
 
 // EmitTrace serializes a TraceLog to JSON and writes it to stdout.
