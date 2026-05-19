@@ -2,10 +2,10 @@ package controlplane
 
 import (
 	"bytes"
-	"io"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"strings"
@@ -36,7 +36,7 @@ func (c *ControlPlaneClient) RegisterNode(ctx context.Context, payload Registrat
 	if err != nil {
 		return resp, err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.BaseURL+"/register", strings.NewReader(string(body)))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.BaseURL+"/register", bytes.NewReader(body))
 	if err != nil {
 		return resp, err
 	}
@@ -67,19 +67,21 @@ func (c *ControlPlaneClient) SendHeartbeat(ctx context.Context, hb HeartbeatRequ
 	if err != nil {
 		return err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.BaseURL+"/heartbeat", strings.NewReader(string(b)))
+	
+	// Optimization: Changed strings.NewReader(string(b)) to bytes.NewReader(b)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.BaseURL+"/heartbeat", bytes.NewReader(b))
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	
 	r, err := c.Client.Do(req)
-	fmt.Println("@@@@")
-	fmt.Println(r)
-	fmt.Println(r.Status)
+	// FIX: Check transport errors immediately before touching 'r'
 	if err != nil {
-		return err
+		return fmt.Errorf("heartbeat transport failed: %w", err)
 	}
-	r.Body.Close()
+	defer r.Body.Close() // Safe to defer closing now that r is guaranteed not to be nil
+
 	if r.StatusCode < 200 || r.StatusCode >= 300 {
 		return fmt.Errorf("heartbeat failed: %s", r.Status)
 	}
@@ -88,46 +90,42 @@ func (c *ControlPlaneClient) SendHeartbeat(ctx context.Context, hb HeartbeatRequ
 
 // UploadEvent posts an event payload to /events.
 func (c *ControlPlaneClient) UploadEvent(ctx context.Context, payload interface{}) error {
-    if c == nil || c.BaseURL == "" {
-        return fmt.Errorf("control plane client not configured")
-    }
-    
-    b, err := json.Marshal(payload)
-    if err != nil {
-        return err
-    }
-    
-    req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.BaseURL+"/events", bytes.NewReader(b))
-    if err != nil {
-        return err
-    }
-    req.Header.Set("Content-Type", "application/json")
-    
-    r, err := c.Client.Do(req)
-    if err != nil {
-        return err // Check the network/transport error FIRST before reading 'r'
-    }
-    defer r.Body.Close() // Ensure the body always closes to prevent socket leaks
+	if c == nil || c.BaseURL == "" {
+		return fmt.Errorf("control plane client not configured")
+	}
+	
+	b, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.BaseURL+"/events", bytes.NewReader(b))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	
+	r, err := c.Client.Do(req)
+	if err != nil {
+		return err 
+	}
+	defer r.Body.Close() 
 
-    // If things went wrong, read the response body to see the server's message
-    if r.StatusCode < 200 || r.StatusCode >= 300 {
-        bodyBytes, readErr := io.ReadAll(r.Body)
-        if readErr != nil {
-            return fmt.Errorf("upload failed with status %s (could not read response body: %v)", r.Status, readErr)
-        }
-        
-        // Print the precise validation errors coming from Express
-        fmt.Printf("--- UPLOAD FAILED DETAILS ---\nStatus: %s\nResponse: %s\n-----------------------------\n", r.Status, string(bodyBytes))
-        
-        return fmt.Errorf("upload failed: %s - %s", r.Status, string(bodyBytes))
-    }
-    
-    return nil
+	if r.StatusCode < 200 || r.StatusCode >= 300 {
+		bodyBytes, readErr := io.ReadAll(r.Body)
+		if readErr != nil {
+			return fmt.Errorf("upload failed with status %s (could not read response body: %v)", r.Status, readErr)
+		}
+		
+		fmt.Printf("--- UPLOAD FAILED DETAILS ---\nStatus: %s\nResponse: %s\n-----------------------------\n", r.Status, string(bodyBytes))
+		
+		return fmt.Errorf("upload failed: %s - %s", r.Status, string(bodyBytes))
+	}
+	
+	return nil
 }
 
 // LogControlPlaneWarning logs a non-fatal warning about control-plane failures.
-// Control-plane errors are operationally important but must not affect the
-// agent's primary monitoring and remediation responsibilities.
 func LogControlPlaneWarning(format string, args ...interface{}) {
 	msg := fmt.Sprintf(format, args...)
 	fmt.Fprintf(os.Stderr, "warning: control-plane: %s\n", msg)
