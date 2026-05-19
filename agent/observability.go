@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"time"
+
+	"drift-agent/agent/controlplane"
 )
 
 // TraceLog captures the complete lifecycle of a sysctl drift event.
@@ -101,6 +103,9 @@ func EmitTrace(log TraceLog) {
 
 	// Write to stdout with newline
 	fmt.Println(string(jsonData))
+
+	// Non-blocking: enqueue for asynchronous upload to control plane
+	controlplane.EnqueueToDefault(log)
 }
 
 // EmitTraceWithIndent serializes a TraceLog to indented JSON for human readability.

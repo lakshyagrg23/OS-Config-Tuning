@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -8,10 +9,13 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
+	"drift-agent/agent/controlplane"
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
 	"github.com/cilium/ebpf/perf"
+	"github.com/cilium/ebpf/rlimit"
 )
 
 // Event mirrors the eBPF kernel struct layout exactly so that manual
@@ -47,6 +51,41 @@ func main() {
 	}
 	objPath := os.Args[1]
 	baselinePath := os.Args[2]
+
+	if err := rlimit.RemoveMemlock(); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to raise memlock limit: %v\n", err)
+	}
+
+	agentConfig, err := LoadAgentConfig("")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to load agent identity: %v\n", err)
+		os.Exit(1)
+	}
+	var cpClient *controlplane.ControlPlaneClient
+	if agentConfig.ControlPlaneURL == "" {
+		fmt.Printf("Agent identity loaded: node_id=%s hostname=%s version=%s\n",
+			agentConfig.NodeID, agentConfig.Hostname, agentConfig.AgentVersion)
+	} else {
+		fmt.Printf("Agent identity loaded: node_id=%s hostname=%s version=%s control_plane=%s\n",
+			agentConfig.NodeID, agentConfig.Hostname, agentConfig.AgentVersion, agentConfig.ControlPlaneURL)
+
+		cpClient = controlplane.NewControlPlaneClient(agentConfig.ControlPlaneURL, nil)
+
+		// Register node best-effort
+		registerCtx, cancel := context.WithTimeout(context.Background(), controlplane.DefaultRegistrationTimeout)
+		ip, err := controlplane.ResolveLocalIPAddress()
+		if err != nil {
+			ip = ""
+		}
+		payload := controlplane.RegistrationRequest{NodeID: agentConfig.NodeID, Hostname: agentConfig.Hostname, IPAddress: ip, AgentVersion: agentConfig.AgentVersion}
+		ack, err := cpClient.RegisterNode(registerCtx, payload)
+		cancel()
+		if err != nil {
+			controlplane.LogControlPlaneWarning("registration failed: %v", err)
+		} else {
+			fmt.Printf("Registered node with control plane: node_id=%s\n", ack.NodeID)
+		}
+	}
 
 	// Load baseline policy before attaching the eBPF program.
 	policy, err := LoadPolicy(baselinePath)
@@ -105,14 +144,28 @@ func main() {
 	}
 	defer rd.Close()
 
+	// Create a cancellable context for background tasks (heartbeat, etc.).
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	// Close the reader on SIGINT / SIGTERM so rd.Read() unblocks and the
-	// main loop exits cleanly without leaving goroutines hanging.
+	// main loop exits cleanly; also cancel background context.
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
 		<-sig
 		rd.Close()
+		cancel()
 	}()
+
+	// Start heartbeat and uploader (best-effort) using the control plane client, if configured.
+	if cpClient != nil {
+		controlplane.StartHeartbeatLoop(ctx, cpClient, agentConfig.NodeID, 10*time.Second)
+		uploader := controlplane.StartUploader(ctx, cpClient, agentConfig.NodeID, 100)
+		if uploader != nil {
+			controlplane.SetDefaultUploader(uploader)
+		}
+	}
 
 	// Create the event queue and start the worker pool before reading events.
 	eventQueue := NewEventQueue()

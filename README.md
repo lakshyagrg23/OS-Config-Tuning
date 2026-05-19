@@ -37,6 +37,43 @@ A Linux kernel **sysctl configuration drift detector and auto-remediator**. It u
 
 On startup, the agent also runs a **pre-flight validation** that checks all monitored parameters against the baseline before the eBPF loop begins — catching drift that occurred while the agent was offline.
 
+The agent also now establishes a persistent node identity at startup. It loads or creates a stable node ID at `/var/lib/drift-agent/node-id`, resolves the hostname, and records the agent version. The control-plane URL is read from the `DRIFT_CONTROL_PLANE_URL` environment variable for the next integration phase.
+
+When a control-plane URL is configured, the agent also sends a best-effort `POST /register` request on startup with `nodeId`, `hostname`, `ipAddress`, and `agentVersion`. Registration failures are logged, but the local drift-monitoring and remediation loop still starts.
+
+Heartbeat
+---------
+When a control-plane URL is configured, the agent starts a best-effort heartbeat loop that POSTs `/heartbeat` every ~10 seconds with `{ "nodeId": "...", "status": "healthy" }`. Heartbeat failures are logged but do not affect local remediation.
+
+Event Upload
+------------
+Trace logs are now also uploaded to the control plane asynchronously. After `EmitTrace()` writes the trace to stdout, the agent enqueues the trace for upload to `POST /events` with the node identity included. Uploads are non-blocking and best-effort; when the uploader queue is full traces are dropped and logged locally.
+
+Error handling strategy
+-----------------------
+
+Control plane communication failures are treated as non-fatal by design. If the backend is down the agent:
+
+- STILL monitors and evaluates events locally
+- STILL remediates according to local policies
+- Only logs a warning locally about control-plane failures (to stderr)
+
+This keeps the control plane as a best-effort side-channel and ensures the agent's local decision path is never blocked by network issues.
+
+Suggested agent-side folder layout
+----------------------------------
+
+You may find it helpful to organize control plane integration code under `agent/controlplane`:
+
+agent/
+├── controlplane/
+│   ├── client.go
+│   ├── register.go
+│   ├── heartbeat.go
+│   └── events.go
+
+This groups HTTP client / upload / heartbeat / registration logic away from the core monitoring and remediation code.
+
 ## Prerequisites
 
 | Requirement | Notes |
@@ -102,6 +139,7 @@ sysctl:
 ```
 drift-agent/
 ├── agent/
+│   ├── identity.go         # persistent node identity + agent metadata
 │   ├── main.go               # entry point: loads eBPF, starts perf reader + worker pool
 │   ├── policy.go             # parses baseline.yaml into Policy struct
 │   ├── queue.go              # WorkEvent type and buffered channel
