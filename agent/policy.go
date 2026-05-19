@@ -6,6 +6,8 @@ import (
 	"strings"
 	"time"
 
+	"drift-agent/stats"
+
 	"gopkg.in/yaml.v3"
 )
 
@@ -29,11 +31,18 @@ type Policy struct {
 	Sysctl           map[string]SysctlPolicy `yaml:"sysctl"`
 }
 
+type DecisionThresholds struct {
+	Alert     int `yaml:"alert"`
+	Remediate int `yaml:"remediate"`
+}
+
 // GlobalConfig holds global settings from the policy file.
 type GlobalConfig struct {
-	DefaultCooldown    time.Duration `yaml:"default_cooldown"`
-	RemediateThreshold int           `yaml:"remediate_threshold"`
-	AlertThreshold     int           `yaml:"alert_threshold"`
+	DefaultCooldown     time.Duration       `yaml:"default_cooldown"`
+	RemediateThreshold  int                 `yaml:"remediate_threshold"`
+	AlertThreshold      int                 `yaml:"alert_threshold"`
+	DecisionThresholds  DecisionThresholds  `yaml:"decision_thresholds"`
+	Stats               stats.Config        `yaml:"stats"`
 }
 
 // Context is a structured representation of a sysctl drift event and its policy,
@@ -48,6 +57,9 @@ type Context struct {
 	Process          string
 	IsTrustedProcess bool
 	IsAllowedProcess bool
+
+	HasIntel bool
+	Intel    stats.EventIntel
 }
 
 // LoadPolicy parses the YAML file at path and returns a Policy.
@@ -70,6 +82,19 @@ func LoadPolicy(path string) (*Policy, error) {
 			entry.Expected = entry.Value
 			p.Sysctl[name] = entry
 		}
+	}
+
+	// Backward/forward compatibility for threshold layouts.
+	// Current baseline.yaml uses:
+	//   global:
+	//     decision_thresholds: { alert: 5, remediate: 8 }
+	// Legacy layout uses:
+	//   global: { alert_threshold: 4, remediate_threshold: 8 }
+	if p.Global.AlertThreshold == 0 && p.Global.DecisionThresholds.Alert != 0 {
+		p.Global.AlertThreshold = p.Global.DecisionThresholds.Alert
+	}
+	if p.Global.RemediateThreshold == 0 && p.Global.DecisionThresholds.Remediate != 0 {
+		p.Global.RemediateThreshold = p.Global.DecisionThresholds.Remediate
 	}
 
 	return &p, nil
@@ -124,5 +149,6 @@ func BuildContext(
 		Process:          event.Process,
 		IsTrustedProcess: isTrusted(event.Process, policy),
 		IsAllowedProcess: isAllowed(event.Process, policyEntry),
+		HasIntel:         false,
 	}
 }

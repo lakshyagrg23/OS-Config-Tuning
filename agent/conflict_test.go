@@ -162,7 +162,7 @@ func TestIsConflicting_WindowBoundary(t *testing.T) {
 	cm.mu.Lock()
 	now := time.Now()
 	cm.events["vm.swappiness"] = []time.Time{
-		now.Add(-10 * time.Second),       // At boundary
+		now.Add(-10 * time.Second),                    // At boundary
 		now.Add(-10*time.Second - 1*time.Millisecond), // Just outside
 	}
 	cm.mu.Unlock()

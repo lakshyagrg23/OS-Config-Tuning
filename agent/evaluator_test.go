@@ -2,6 +2,8 @@ package main
 
 import (
 	"testing"
+
+	"drift-agent/stats"
 )
 
 func TestEvaluateDecision_AllowedProcess(t *testing.T) {
@@ -269,5 +271,68 @@ func TestEvaluateDecision_HasReasons(t *testing.T) {
 	// Should have multiple reasons for audit trail
 	if decision.Action == "remediate" && len(decision.Reasons) < 1 {
 		t.Errorf("remediation decision should have at least 1 reason, got %d", len(decision.Reasons))
+	}
+}
+
+func TestEvaluateDecision_IntelRiskFusion_Escalates(t *testing.T) {
+	ctx := Context{
+		Param:            "test.param",
+		Expected:         "0",
+		Actual:           "1",
+		Category:         "performance",
+		Criticality:      "low",
+		Process:          "noisy-proc",
+		IsTrustedProcess: false,
+		IsAllowedProcess: false,
+		HasIntel:         true,
+		Intel: stats.EventIntel{
+			ProcessReputationBefore:   stats.ReputationSnapshot{Score: 0.2},
+			BehavioralAnomalySeverity: stats.SeverityHigh,
+			Burst:                     stats.BurstSnapshot{Count: 10, Threshold: 5, Window: 2 * 1e9, Score: 1.0, Severity: stats.SeverityHigh},
+		},
+	}
+
+	policyEntry := SysctlPolicy{Expected: "0", Remediation: "auto"}
+	global := GlobalConfig{RemediateThreshold: 8, AlertThreshold: 4}
+
+	decision := EvaluateDecision(ctx, policyEntry, global)
+	if decision.BaseScore != 3 {
+		t.Fatalf("expected base score 3, got %d", decision.BaseScore)
+	}
+	if decision.Score < 4 {
+		t.Fatalf("expected fused score to escalate to >=4, got %d", decision.Score)
+	}
+	if decision.Action != "alert" && decision.Action != "remediate" {
+		t.Fatalf("expected escalation, got action=%s score=%d", decision.Action, decision.Score)
+	}
+}
+
+func TestEvaluateDecision_IntelHardRule2_NoRiskReduction(t *testing.T) {
+	ctx := Context{
+		Param:            "kernel.randomize_va_space",
+		Expected:         "2",
+		Actual:           "0",
+		Category:         "security",
+		Criticality:      "high",
+		Process:          "unknown",
+		IsTrustedProcess: false,
+		IsAllowedProcess: false,
+		HasIntel:         true,
+		Intel: stats.EventIntel{
+			ProcessReputationBefore:   stats.ReputationSnapshot{Score: 1.0, StableFor: 10 * 1e9},
+			BehavioralAnomalySeverity: stats.SeverityNone,
+			Burst:                     stats.BurstSnapshot{Count: 0, Threshold: 10, Window: 2 * 1e9, Score: 0, Severity: stats.SeverityNone},
+		},
+	}
+
+	policyEntry := SysctlPolicy{Expected: "2", Remediation: "auto"}
+	global := GlobalConfig{RemediateThreshold: 8, AlertThreshold: 4}
+
+	decision := EvaluateDecision(ctx, policyEntry, global)
+	if decision.Action != "remediate" {
+		t.Fatalf("expected remediate, got %s", decision.Action)
+	}
+	if decision.Score < 10 {
+		t.Fatalf("expected score floor at 10, got %d", decision.Score)
 	}
 }

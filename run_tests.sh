@@ -5,8 +5,12 @@
 
 set -e
 
-PROJECT_DIR="/home/lakshya/drift-agent"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="${PROJECT_DIR:-$SCRIPT_DIR}"
+
+# LOG_FILE is JSON-only (one TraceLog object per line).
 LOG_FILE="/tmp/drift-agent-traces.jsonl"
+RAW_LOG_FILE="/tmp/drift-agent-output.log"
 ERROR_LOG="/tmp/drift-agent-errors.log"
 
 echo "=========================================="
@@ -16,21 +20,52 @@ echo ""
 echo "📋 Test Setup:"
 echo "  Project Dir: $PROJECT_DIR"
 echo "  Traces Log:  $LOG_FILE"
+echo "  Raw Output:  $RAW_LOG_FILE"
 echo "  Error Log:   $ERROR_LOG"
 echo ""
 
+if ! command -v jq >/dev/null 2>&1; then
+  echo "⚠️  jq is not installed. Install it for JSON summaries: sudo apt-get install -y jq"
+fi
+
+echo "🔐 Validating sudo (you may be prompted once)..."
+sudo -v
+
 # Clean previous logs
-rm -f "$LOG_FILE" "$ERROR_LOG"
+rm -f "$LOG_FILE" "$RAW_LOG_FILE" "$ERROR_LOG"
+
+echo "🔧 Building drift-agent + eBPF program..."
+make -C "$PROJECT_DIR" clean >/dev/null
+make -C "$PROJECT_DIR" all >/dev/null
 
 echo "🚀 Starting drift-agent..."
 echo ""
 
-# Start agent in background, capture PID
+# Start agent in background. Capture the *sudo* PID, then resolve the child drift-agent PID.
 cd "$PROJECT_DIR"
-sudo ./drift-agent ebpf/sysctl_monitor.o config/baseline.yaml 2>"$ERROR_LOG" | tee "$LOG_FILE" &
-AGENT_PID=$!
+sudo ./drift-agent ebpf/sysctl_monitor.o config/baseline.yaml \
+  2>"$ERROR_LOG" \
+  > >(tee "$RAW_LOG_FILE" >(grep -E '^\{' > "$LOG_FILE")) &
+SUDO_PID=$!
 
-echo "Agent running with PID: $AGENT_PID"
+# Resolve the drift-agent PID (child of sudo).
+sleep 0.2
+AGENT_PID=$(sudo pgrep -P "$SUDO_PID" drift-agent | head -n 1 || true)
+if [ -z "$AGENT_PID" ]; then
+  echo "⚠️  Could not resolve drift-agent PID; will stop via sudo PID ($SUDO_PID)."
+fi
+
+# Ensure we stop the agent if the script exits early.
+cleanup() {
+  if [ -n "$AGENT_PID" ]; then
+    sudo kill "$AGENT_PID" 2>/dev/null || true
+  else
+    sudo kill "$SUDO_PID" 2>/dev/null || true
+  fi
+}
+trap cleanup EXIT
+
+echo "Agent running with PID: ${AGENT_PID:-unknown}"
 echo "Waiting 2 seconds for agent initialization..."
 sleep 2
 
@@ -145,7 +180,7 @@ echo "All tests completed!"
 echo "=========================================="
 echo ""
 echo "✅ Stopping agent..."
-sudo kill $AGENT_PID 2>/dev/null || true
+cleanup
 sleep 1
 
 echo ""
@@ -153,26 +188,26 @@ echo "📊 TEST RESULTS"
 echo "=========================================="
 echo ""
 
-# Count events
+# Count JSON trace events
 total_events=$(wc -l < "$LOG_FILE" 2>/dev/null || echo "0")
 echo "Total events captured: $total_events"
 
 if [ "$total_events" -gt 0 ]; then
   echo ""
   echo "📈 Events by final_action:"
-  cat "$LOG_FILE" | jq -s 'group_by(.final_action) | map({action: .[0].final_action, count: length})' 2>/dev/null | jq '.'
+  jq -s 'group_by(.final_action) | map({action: .[0].final_action, count: length})' "$LOG_FILE" | jq '.'
   
   echo ""
   echo "🔒 Security violations detected:"
-  cat "$LOG_FILE" | jq -s '[.[] | select(.category == "security" and .final_action != "allow")] | length' 2>/dev/null
+  jq -s '[.[] | select(.category == "security" and .final_action != "allow")] | length' "$LOG_FILE"
   
   echo ""
   echo "⚠️  Conflicts detected:"
-  cat "$LOG_FILE" | jq -s '[.[] | select(.conflict_detected == true)] | length' 2>/dev/null
+  jq -s '[.[] | select(.conflict_detected == true)] | length' "$LOG_FILE"
   
   echo ""
   echo "❄️  Cooldown blocking:"
-  cat "$LOG_FILE" | jq -s '[.[] | select(.cooldown_applied == true)] | length' 2>/dev/null
+  jq -s '[.[] | select(.cooldown_applied == true)] | length' "$LOG_FILE"
 else
   echo "⚠️  No events captured. Check if agent failed to start."
 fi

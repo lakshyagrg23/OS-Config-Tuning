@@ -6,6 +6,8 @@ import (
 	"runtime"
 	"sync"
 	"time"
+
+	"drift-agent/stats"
 )
 
 // agentPID stores the PID of this agent process to prevent infinite loops
@@ -18,9 +20,10 @@ func init() {
 
 // WorkerContext holds state managers for coordinating decisions across events.
 type WorkerContext struct {
-	policy              *Policy
-	cooldownManager     *CooldownManager
-	conflictManager     *ConflictManager
+	policy          *Policy
+	cooldownManager *CooldownManager
+	conflictManager *ConflictManager
+	intel           *stats.Engine
 }
 
 // StartWorkerPool launches runtime.NumCPU() goroutines that drain eventQueue.
@@ -34,11 +37,16 @@ func StartWorkerPool(eventQueue <-chan WorkEvent, policy *Policy) *sync.WaitGrou
 	// Initialize state managers
 	cooldownManager := NewCooldownManager()
 	conflictManager := NewConflictManager()
+	intel := stats.NewEngine(stats.Config{})
+	if policy != nil {
+		intel = stats.NewEngine(policy.Global.Stats)
+	}
 
 	ctx := &WorkerContext{
-		policy:              policy,
-		cooldownManager:     cooldownManager,
-		conflictManager:     conflictManager,
+		policy:          policy,
+		cooldownManager: cooldownManager,
+		conflictManager: conflictManager,
+		intel:           intel,
 	}
 
 	var wg sync.WaitGroup
@@ -79,6 +87,10 @@ func processEvent(event WorkEvent, ctx *WorkerContext) {
 		return
 	}
 
+	now := time.Now()
+	processWriteMetrics := ctx.intel.ObserveProcessWrite(event.Process, now)
+	processRepBefore := ctx.intel.GetReputation(event.Process, now)
+
 	// 4. Read actual current value
 	actual, err := ReadSysctlValue(param)
 	if err != nil {
@@ -88,11 +100,28 @@ func processEvent(event WorkEvent, ctx *WorkerContext) {
 
 	// 5. Early exit if no drift detected
 	if actual == policyEntry.Expected {
+		ctx.intel.UpdateReputation(event.Process, now, stats.ReputationUpdate{
+			WasDrift:        false,
+			FinalAction:     "allow",
+			AnomalySeverity: processWriteMetrics.Anomaly.Severity,
+			BurstSeverity:   processWriteMetrics.Burst.Severity,
+		})
 		return
 	}
 
 	// 6. Build context (enriches event with policy data)
 	eventCtx := BuildContext(event, param, policyEntry, actual, ctx.policy)
+	paramDriftMetrics := ctx.intel.ObserveParamDrift(param, now)
+	behavioralAnomaly, anomalySev, burst := stats.FuseBehavioralSignals(processWriteMetrics, paramDriftMetrics)
+	eventCtx.HasIntel = true
+	eventCtx.Intel = stats.EventIntel{
+		ProcessWrite:              processWriteMetrics,
+		ParamDrift:                paramDriftMetrics,
+		ProcessReputationBefore:   processRepBefore,
+		BehavioralAnomaly:         behavioralAnomaly,
+		BehavioralAnomalySeverity: anomalySev,
+		Burst:                     burst,
+	}
 
 	// 7. Make policy decision (hard rules, risk scoring, thresholds)
 	decision := EvaluateDecision(eventCtx, policyEntry, ctx.policy.Global)
@@ -130,6 +159,7 @@ func processEvent(event WorkEvent, ctx *WorkerContext) {
 	finalAction := decision.Action
 
 	// 12. Execute final action
+	remediationSucceeded := false
 	switch finalAction {
 	case "remediate":
 		err := ApplyRemediation(param, policyEntry.Expected)
@@ -138,9 +168,13 @@ func processEvent(event WorkEvent, ctx *WorkerContext) {
 		} else {
 			fmt.Printf("🔧 REMEDIATION APPLIED\n  Parameter: %s\n  Restored : %s\n", param, policyEntry.Expected)
 			fmt.Printf("🔧 REMEDIATED %s → %s\n", param, policyEntry.Expected)
+			remediationSucceeded = true
 
 			// Record successful remediation for cooldown window
 			ctx.cooldownManager.Record(param)
+
+			// Update remediation frequency intelligence after success.
+			eventCtx.Intel.Remediation = ctx.intel.ObserveRemediation(time.Now())
 		}
 
 	case "alert":
@@ -150,6 +184,21 @@ func processEvent(event WorkEvent, ctx *WorkerContext) {
 	case "allow":
 		// intentionally no-op (allowed drift)
 	}
+
+	// 12.5 Update dynamic reputation based on final outcome.
+	repAction := finalAction
+	if finalAction == "remediate" && !remediationSucceeded {
+		repAction = "alert"
+	}
+	repAfter := ctx.intel.UpdateReputation(event.Process, time.Now(), stats.ReputationUpdate{
+		WasDrift:         true,
+		FinalAction:      repAction,
+		CooldownApplied:  cooldownApplied,
+		ConflictDetected: conflictDetected,
+		AnomalySeverity:  eventCtx.Intel.BehavioralAnomalySeverity,
+		BurstSeverity:    eventCtx.Intel.Burst.Severity,
+	})
+	eventCtx.Intel.ProcessReputationAfter = repAfter
 
 	// 13. Emit structured trace log for observability
 	trace := BuildTraceLog(

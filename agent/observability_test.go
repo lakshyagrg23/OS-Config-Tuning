@@ -39,19 +39,19 @@ func TestTraceLog_Empty(t *testing.T) {
 func TestTraceLog_CreationWithValues(t *testing.T) {
 	now := time.Now()
 	log := TraceLog{
-		Timestamp:     now,
-		Param:         "vm.swappiness",
-		Process:       "kube-proxy",
-		Actual:        "60",
-		Expected:      "10",
-		Category:      "performance",
-		Criticality:   "medium",
-		Trusted:       true,
-		Allowed:       false,
+		Timestamp:      now,
+		Param:          "vm.swappiness",
+		Process:        "kube-proxy",
+		Actual:         "60",
+		Expected:       "10",
+		Category:       "performance",
+		Criticality:    "medium",
+		Trusted:        true,
+		Allowed:        false,
 		DecisionAction: "alert",
-		Score:         5,
-		Reasons:       []string{"process mismatch"},
-		FinalAction:   "alert",
+		Score:          5,
+		Reasons:        []string{"process mismatch"},
+		FinalAction:    "alert",
 	}
 
 	if log.Param != "vm.swappiness" {
@@ -67,18 +67,18 @@ func TestTraceLog_CreationWithValues(t *testing.T) {
 
 func TestEmitTrace_JSONFormat(t *testing.T) {
 	log := TraceLog{
-		Param:          "net.ipv4.ip_forward",
-		Process:        "kube-proxy",
-		Actual:         "1",
-		Expected:       "0",
-		Category:       "security",
-		Criticality:    "high",
-		Trusted:        false,
-		Allowed:        false,
-		DecisionAction: "remediate",
-		Score:          10,
-		Reasons:        []string{"untrusted process", "high criticality"},
-		FinalAction:    "alert",
+		Param:           "net.ipv4.ip_forward",
+		Process:         "kube-proxy",
+		Actual:          "1",
+		Expected:        "0",
+		Category:        "security",
+		Criticality:     "high",
+		Trusted:         false,
+		Allowed:         false,
+		DecisionAction:  "remediate",
+		Score:           10,
+		Reasons:         []string{"untrusted process", "high criticality"},
+		FinalAction:     "alert",
 		CooldownApplied: true,
 	}
 
@@ -157,14 +157,14 @@ func TestEmitTraceWithIndent_Format(t *testing.T) {
 
 func TestBuildTraceLog_Construction(t *testing.T) {
 	ctx := Context{
-		Param:              "vm.swappiness",
-		Process:            "kube-proxy",
-		Actual:             "60",
-		Expected:           "10",
-		Category:           "performance",
-		Criticality:        "medium",
-		IsTrustedProcess:   true,
-		IsAllowedProcess:   false,
+		Param:            "vm.swappiness",
+		Process:          "kube-proxy",
+		Actual:           "60",
+		Expected:         "10",
+		Category:         "performance",
+		Criticality:      "medium",
+		IsTrustedProcess: true,
+		IsAllowedProcess: false,
 	}
 
 	decision := Decision{
@@ -206,14 +206,14 @@ func TestBuildTraceLog_Construction(t *testing.T) {
 
 func TestBuildTraceLog_WithCooldownAndConflict(t *testing.T) {
 	ctx := Context{
-		Param:              "net.ipv4.ip_forward",
-		Process:            "malicious-app",
-		Actual:             "1",
-		Expected:           "0",
-		Category:           "security",
-		Criticality:        "high",
-		IsTrustedProcess:   false,
-		IsAllowedProcess:   false,
+		Param:            "net.ipv4.ip_forward",
+		Process:          "malicious-app",
+		Actual:           "1",
+		Expected:         "0",
+		Category:         "security",
+		Criticality:      "high",
+		IsTrustedProcess: false,
+		IsAllowedProcess: false,
 	}
 
 	decision := Decision{
@@ -346,14 +346,14 @@ func TestEmitTrace_MultipleWrites(t *testing.T) {
 func TestTraceLog_FullScenario(t *testing.T) {
 	// Simulate a complete drift detection scenario
 	ctx := Context{
-		Param:              "net.ipv4.ip_forward",
-		Process:            "malware",
-		Actual:             "1",
-		Expected:           "0",
-		Category:           "security",
-		Criticality:        "high",
-		IsTrustedProcess:   false,
-		IsAllowedProcess:   false,
+		Param:            "net.ipv4.ip_forward",
+		Process:          "malware",
+		Actual:           "1",
+		Expected:         "0",
+		Category:         "security",
+		Criticality:      "high",
+		IsTrustedProcess: false,
+		IsAllowedProcess: false,
 	}
 
 	decision := Decision{
@@ -442,14 +442,14 @@ func BenchmarkEmitTrace(b *testing.B) {
 
 func BenchmarkBuildTraceLog(b *testing.B) {
 	ctx := Context{
-		Param:              "vm.swappiness",
-		Process:            "kube-proxy",
-		Actual:             "60",
-		Expected:           "10",
-		Category:           "performance",
-		Criticality:        "medium",
-		IsTrustedProcess:   true,
-		IsAllowedProcess:   false,
+		Param:            "vm.swappiness",
+		Process:          "kube-proxy",
+		Actual:           "60",
+		Expected:         "10",
+		Category:         "performance",
+		Criticality:      "medium",
+		IsTrustedProcess: true,
+		IsAllowedProcess: false,
 	}
 
 	decision := Decision{

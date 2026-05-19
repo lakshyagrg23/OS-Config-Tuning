@@ -18,14 +18,24 @@ func RunStartupValidation(policy *Policy) {
 			continue
 		}
 
-		if actual != policyEntry.Value {
+		expected := policyEntry.Expected
+		if expected == "" {
+			expected = policyEntry.Value
+		}
+
+		if expected == "" {
+			fmt.Printf("  [warn] baseline for %s has empty expected value\n", param)
+			continue
+		}
+
+		if actual != expected {
 			driftFound = true
 			fmt.Printf(
 				"\n⚠  CONFIGURATION DRIFT DETECTED (Startup Validation)\n"+
 					"  Parameter: %s\n"+
 					"  Expected : %s\n"+
 					"  Actual   : %s\n",
-				param, policyEntry.Value, actual,
+				param, expected, actual,
 			)
 		}
 	}
