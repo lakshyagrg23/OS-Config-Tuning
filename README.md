@@ -1,231 +1,203 @@
-# Autonomous eBPF-Driven OS Configuration Drift Detection & Remediation Agent
+# Drift Agent
 
-> A real-time Linux configuration drift detection and self-healing system built using **eBPF**, **Go**, and a policy-driven architecture.
-
-![Linux](https://img.shields.io/badge/Linux-eBPF-blue)
-![Go](https://img.shields.io/badge/Go-1.22+-00ADD8)
-![License](https://img.shields.io/badge/License-MIT-green)
-![Status](https://img.shields.io/badge/Status-Active%20Development-orange)
-
----
+**An Autonomous eBPF-Driven Agent for Detecting and Correcting OS Configuration Drift in Dynamic Workloads**
 
 ## Overview
 
-Modern Linux systems—especially cloud instances, containers, and dynamic workloads—are susceptible to **configuration drift**, where critical operating system parameters deviate from their intended baseline due to manual changes, scripts, services, or software installations.
+**Drift Agent** is a Linux-based autonomous configuration enforcement system that continuously monitors critical operating system configuration parameters, detects deviations from a predefined baseline, and automatically restores the system to its desired state.
 
-While existing monitoring tools can detect these changes, they often rely on periodic polling and require manual intervention.
+Unlike traditional configuration management tools that rely primarily on scheduled reconciliation, Drift Agent adopts an **event-driven approach** using **eBPF (Extended Berkeley Packet Filter)** to detect configuration changes in real time with minimal overhead.
 
-This project introduces an **autonomous node agent** that continuously observes kernel-level configuration changes using **eBPF**, detects deviations from a predefined policy, and automatically restores the expected system state.
-
-The long-term vision extends beyond a single node into a distributed architecture consisting of multiple autonomous agents managed by a centralized control plane.
+The project is designed around the idea of a **self-healing operating system**, where unauthorized or unintended configuration changes are detected and corrected automatically while maintaining a lightweight runtime footprint.
 
 ---
 
-# Problem Statement
+## Motivation
 
-Operating system configuration drift can lead to:
+Modern Linux systems frequently experience **configuration drift**, where system parameters gradually deviate from their intended values due to:
 
-- Security vulnerabilities
-- Performance degradation
-- Inconsistent environments
-- Compliance violations
-- Unexpected application behavior
+* Manual administrator changes
+* Startup scripts
+* Package installations
+* Application tuning
+* Runtime services
+* Configuration mistakes
 
-Traditional approaches typically:
+Configuration drift can lead to:
 
-- Periodically poll system parameters
-- Detect drift after significant delay
-- Generate alerts without remediation
-- Require manual correction
+* Reduced security
+* Performance degradation
+* System instability
+* Inconsistent environments
+* Difficult debugging
 
-This project aims to provide a **real-time, event-driven, self-healing solution** for Linux OS configuration management.
+Most existing configuration management tools periodically check system state, introducing unnecessary overhead and slower detection.
 
----
-
-# Key Features
-
-- Real-time OS configuration monitoring using eBPF
-- Event-driven architecture (no continuous polling)
-- Startup baseline validation
-- YAML-based policy engine
-- Automatic drift detection
-- Policy-driven remediation
-- Verification after remediation
-- Concurrent event processing
-- Self-event filtering to prevent remediation loops
-- Modular architecture for future distributed deployment
+Drift Agent instead leverages **kernel-level observability** to detect configuration changes the moment they occur.
 
 ---
 
-# System Architecture
+# Features
 
-## Current Node Agent
+* Real-time monitoring using eBPF
+* Event-driven drift detection
+* YAML-based baseline policies
+* Automatic remediation
+* Startup configuration validation
+* Concurrent event processing
+* Self-healing Linux configuration management
+* Modular architecture for future distributed deployment
 
+---
+
+# Project Architecture
+
+The current implementation consists of two major components:
+
+```text
+                    Linux Kernel
+                          │
+                          ▼
+               eBPF Monitoring Layer
+                          │
+                    Perf Event Buffer
+                          │
+                          ▼
+                  Go Userspace Agent
+                          │
+          ┌───────────────┴───────────────┐
+          │                               │
+          ▼                               ▼
+   Startup Validation              Event Queue
+                                          │
+                                          ▼
+                                    Worker Pool
+                                          │
+                                          ▼
+                                    Policy Engine
+                                          │
+                                          ▼
+                                   Drift Detection
+                                          │
+                                          ▼
+                                 Remediation Engine
+                                          │
+                                          ▼
+                                System State Restored
 ```
-                 Startup Validation
-                         │
-                         ▼
-            eBPF Monitoring Layer
-      (tracepoint/syscalls/sys_enter_openat)
-                         │
-                         ▼
-                 Perf Event Buffer
-                         │
-                         ▼
-                  Perf Event Reader
-                         │
-                         ▼
-                 Event Queue (Channel)
-                         │
-                         ▼
-                   Worker Pool
-                         │
-                         ▼
-                  Policy Engine
-                         │
-                         ▼
-                 Drift Detection
-                         │
-                         ▼
-                Remediation Engine
-                         │
-                         ▼
-             System Configuration Restored
-```
 
 ---
 
-## Future Distributed Architecture
+# Future Distributed Architecture
 
-```
-                    ┌──────────────────────────────┐
-                    │        Control Plane         │
-                    │ API • Dashboard • Policies   │
-                    └──────────────┬───────────────┘
+The long-term vision is to support centralized management across multiple machines.
+
+```text
+                     ┌────────────────────────────┐
+                     │       Control Plane        │
+                     │ API • Dashboard • Policies │
+                     └─────────────┬──────────────┘
                                    │
-              ┌────────────────────┴────────────────────┐
-              │                                         │
-      ┌───────────────┐                       ┌───────────────┐
-      │   Node Agent  │                       │   Node Agent  │
-      │   Linux Host  │                       │   Linux Host  │
-      └───────┬───────┘                       └───────┬───────┘
-              │                                       │
-       ┌──────▼──────┐                        ┌──────▼──────┐
-       │    eBPF     │                        │    eBPF     │
-       └─────────────┘                        └─────────────┘
+                 ┌─────────────────┼─────────────────┐
+                 │                 │                 │
+          ┌────────────┐    ┌────────────┐    ┌────────────┐
+          │ Node Agent │    │ Node Agent │    │ Node Agent │
+          └─────┬──────┘    └─────┬──────┘    └─────┬──────┘
+                │                 │                 │
+             eBPF Layer        eBPF Layer      eBPF Layer
 ```
 
 ---
 
-# Design Philosophy
+# Core Components
 
-The project follows several core principles:
+## 1. eBPF Monitoring Layer
 
-### Event-Driven Monitoring
+The monitoring layer is implemented in C using eBPF and attached to Linux tracepoints.
 
-Rather than polling system parameters continuously, the agent reacts only when configuration files are accessed.
+Current implementation monitors:
 
-### Autonomous Remediation
+* `sys_enter_openat`
 
-The system not only detects drift but can automatically restore the expected configuration based on policy.
+The eBPF program captures:
 
-### Modular Components
+* Process ID
+* Process name
+* Target filename
+* Access mode (READ / WRITE)
 
-Each subsystem has a single responsibility:
-
-- Monitoring
-- Policy evaluation
-- Drift detection
-- Remediation
-- Observability
-
-### Minimal System Overhead
-
-Monitoring relies on eBPF kernel tracepoints, avoiding expensive polling loops.
-
-### Deterministic Behavior
-
-All remediation decisions are explicitly driven by policy.
+Only accesses to `/proc/sys/*` are considered configuration-related.
 
 ---
 
-# Technology Stack
+## 2. Event Transport
 
-| Component | Technology |
-|------------|------------|
-| Language | Go |
-| Kernel Monitoring | eBPF |
-| Linux Interface | tracepoint/syscalls/sys_enter_openat |
-| Event Transport | Perf Event Buffer |
-| Configuration | YAML |
-| Concurrency | Goroutines + Channels |
-| Remediation | Linux sysctl |
-| Operating System | Linux |
+Events generated inside the kernel are transmitted to userspace using:
+
+* `BPF_MAP_TYPE_PERF_EVENT_ARRAY`
+
+This enables efficient communication between kernel space and the Go agent.
 
 ---
 
-# Project Workflow
+## 3. Startup Validation
 
-```
-Configuration Change
-          │
-          ▼
-eBPF Tracepoint Triggered
-          │
-          ▼
-Kernel Event Generated
-          │
-          ▼
-Perf Event Buffer
-          │
-          ▼
-Go Event Reader
-          │
-          ▼
-Worker Pool
-          │
-          ▼
-Policy Evaluation
-          │
-          ▼
-Drift Detected?
-     │             │
-     │No           │Yes
-     ▼             ▼
- Ignore      Remediation Engine
-                     │
-                     ▼
-             Verify Correction
-                     │
-                     ▼
-             Configuration Restored
+Before real-time monitoring begins, the agent validates the current system configuration against the baseline.
+
+This allows detection of configuration drift that already existed before the agent started.
+
+Example:
+
+```text
+--- Startup Baseline Validation ---
+All parameters match baseline.
+-----------------------------------
 ```
 
 ---
 
-# Monitoring Strategy
+## 4. Event Queue
 
-Instead of relying on continuous polling, the project adopts a hybrid strategy:
+Kernel events are not processed directly.
 
-### Startup Validation
+Instead, they are placed into a buffered event queue.
 
-At startup, every configured parameter is validated against the baseline to detect any existing drift.
+```text
+Perf Reader
+      │
+      ▼
+ Event Queue
+      │
+      ▼
+ Worker Pool
+```
 
-### Runtime Monitoring
+This design:
 
-After startup, eBPF monitors configuration accesses in real time.
-
-This approach provides:
-
-- Immediate drift detection
-- Minimal CPU usage
-- No unnecessary polling overhead
+* separates event ingestion from processing
+* improves scalability
+* prevents blocking
+* enables concurrent policy evaluation
 
 ---
 
-# Policy Engine
+## 5. Worker Pool
 
-Policies are defined using YAML.
+A pool of worker goroutines consumes events from the queue.
+
+Each worker independently performs:
+
+1. Parameter resolution
+2. Policy lookup
+3. Runtime value retrieval
+4. Drift detection
+5. Remediation (if enabled)
+
+---
+
+## 6. Policy Engine
+
+Desired configuration is stored in a YAML file.
 
 Example:
 
@@ -244,66 +216,171 @@ sysctl:
     remediation: alert
 ```
 
-Each policy specifies:
+Each policy defines:
 
-- Expected value
-- Remediation behavior
+* expected value
+* remediation mode
 
 Supported remediation modes:
 
-- `auto`
-- `alert`
+| Mode  | Description                     |
+| ----- | ------------------------------- |
+| auto  | Automatically restore baseline  |
+| alert | Report drift without correcting |
 
 ---
 
-# Parameters Monitored
+## 7. Drift Detection
 
-Example categories include:
-
-### Memory
-
-- vm.swappiness
-- vm.dirty_ratio
-
-### Kernel Security
-
-- kernel.randomize_va_space
-
-### Networking
-
-- net.ipv4.ip_forward
-- net.ipv4.tcp_syncookies
-- net.core.somaxconn
-
-These parameters were selected because they are generally stable and have significant security or performance implications.
-
----
-
-# Remediation Workflow
-
-When drift is detected:
-
-1. Read current parameter value
-2. Compare with policy baseline
-3. Decide remediation action
-4. Execute
-
-```
-sysctl -w parameter=value
-```
-
-5. Verify successful restoration
+Whenever a configuration change occurs, the current value is compared against the baseline.
 
 Example output:
 
-```
+```text
 ⚠ CONFIGURATION DRIFT DETECTED
 
 Parameter : vm.swappiness
 Expected  : 10
 Actual    : 80
 Process   : sysctl
-PID       : 4321
+PID       : 12345
+```
+
+---
+
+## 8. Remediation Engine
+
+If automatic remediation is enabled, the agent restores the expected configuration.
+
+Current remediation strategy:
+
+```bash
+sysctl -w parameter=value
+```
+
+Example:
+
+```bash
+sysctl -w vm.swappiness=10
+```
+
+After remediation, the agent verifies that the parameter has been restored successfully.
+
+Example:
+
+```text
+🔧 REMEDIATION APPLIED
+
+Parameter : vm.swappiness
+Restored  : 10
+```
+
+---
+
+## 9. Self-Event Filtering
+
+When the agent performs remediation, it generates its own kernel events.
+
+To prevent infinite remediation loops:
+
+* the agent records its PID at startup
+* any event originating from that PID is ignored
+
+---
+
+# Monitoring Strategy
+
+The monitoring strategy was carefully designed to balance efficiency and reliability.
+
+## Runtime Monitoring
+
+Real-time changes are detected using eBPF.
+
+Advantages:
+
+* near-zero overhead
+* immediate detection
+* event-driven
+
+## Startup Validation
+
+Instead of continuously polling the system, the agent performs a one-time validation during startup.
+
+This detects any drift that already existed before monitoring began.
+
+This combination provides complete coverage while avoiding the complexity and overhead of continuous polling.
+
+---
+
+# Currently Monitored Configuration Areas
+
+Examples include:
+
+### Memory
+
+* vm.swappiness
+* vm.dirty_ratio
+
+### Kernel Security
+
+* kernel.randomize_va_space
+
+### Networking
+
+* net.ipv4.ip_forward
+* net.ipv4.tcp_syncookies
+* net.core.somaxconn
+
+The project focuses on stable security and system integrity parameters rather than frequently changing workload-specific tuning parameters.
+
+---
+
+# Example Workflow
+
+User changes a configuration:
+
+```bash
+sudo sysctl -w vm.swappiness=99
+```
+
+The system performs:
+
+```text
+Configuration Change
+        │
+        ▼
+eBPF detects openat()
+        │
+        ▼
+Kernel Event
+        │
+        ▼
+Perf Buffer
+        │
+        ▼
+Go Agent
+        │
+        ▼
+Policy Evaluation
+        │
+        ▼
+Drift Detected
+        │
+        ▼
+Automatic Remediation
+        │
+        ▼
+Configuration Restored
+```
+
+Example output:
+
+```text
+⚠ CONFIGURATION DRIFT DETECTED
+
+Parameter : vm.swappiness
+Expected  : 10
+Actual    : 99
 
 🔧 REMEDIATION APPLIED
 
@@ -313,104 +390,104 @@ Restored  : 10
 
 ---
 
-# Self-Event Filtering
+# Technology Stack
 
-Since remediation itself modifies system parameters, the agent ignores events generated by its own process.
+### Languages
 
-This prevents infinite remediation loops.
+* Go
+* C (eBPF)
 
----
+### Linux Technologies
 
-# Concurrency Model
+* eBPF
+* Linux Tracepoints
+* Perf Event Buffer
+* sysctl
+* procfs (`/proc/sys`)
 
-The userspace agent processes events concurrently using:
+### Libraries
 
-- Buffered channels
-- Worker pool
-- Goroutines
-- WaitGroups
-
-Pipeline:
-
-```
-Perf Reader
-      │
-      ▼
- Event Queue
-      │
-      ▼
- Worker Pool
-      │
-      ▼
- processEvent()
-```
+* cilium/ebpf
+* bpftool
+* clang
 
 ---
 
-# Current Project Status
+# Current Status
 
-| Component | Status |
-|------------|--------|
-| eBPF Monitoring | ✅ |
-| Perf Event Buffer | ✅ |
-| Event Queue | ✅ |
-| Worker Pool | ✅ |
-| Policy Engine | ✅ |
-| Startup Validation | ✅ |
-| Drift Detection | ✅ |
-| Automatic Remediation | ✅ |
-| Verification | ✅ |
-| Self-Event Filtering | ✅ |
-| Multi-node Support | 🚧 |
-| Control Plane | 🚧 |
-| Dashboard | 🚧 |
+| Component             | Status     |
+| --------------------- | ---------- |
+| eBPF Monitoring       | ✅          |
+| Perf Event Transport  | ✅          |
+| Startup Validation    | ✅          |
+| Event Queue           | ✅          |
+| Worker Pool           | ✅          |
+| Policy Engine         | ✅          |
+| Drift Detection       | ✅          |
+| Automatic Remediation | ✅          |
+| Control Plane         | 🚧 Planned |
+
+---
+
+# Future Roadmap
+
+## Phase 1 — Autonomous Node Agent ✅
+
+* eBPF monitoring
+* Policy engine
+* Drift detection
+* Automatic remediation
+
+## Phase 2 — Distributed Control Plane
+
+Planned features:
+
+* Multi-node management
+* Centralized dashboard
+* Policy distribution
+* Agent registration
+* Drift visualization
+* Remediation history
+* Audit logs
+
+## Phase 3 — Enterprise Features
+
+* Policy versioning
+* Prometheus metrics
+* Role-based access control
+* Kubernetes integration
+* High availability
+* Distributed policy synchronization
 
 ---
 
 # Repository Structure
 
-```
+```text
 .
-├── bpf/                 # eBPF programs
-├── internal/
-│   ├── monitor/
-│   ├── policy/
-│   ├── detector/
-│   ├── remediation/
-│   ├── startup/
-│   └── workers/
-├── configs/
+├── agent/
+│   ├── main.go
+│   ├── queue.go
+│   ├── worker.go
+│   ├── policy.go
+│   ├── reader.go
+│   ├── resolver.go
+│   ├── evaluator.go
+│   ├── remediation.go
+│   └── startup_validator.go
+│
+├── ebpf/
+│   ├── sysctl_monitor.c
+│   └── sysctl_monitor.o
+│
+├── config/
 │   └── baseline.yaml
-├── cmd/
-│   └── agent/
-├── docs/
+│
 └── README.md
 ```
 
 ---
 
-# Why eBPF?
+# License
 
-eBPF enables lightweight kernel-level observability without requiring kernel modifications.
-
-Benefits include:
-
-- Near real-time event detection
-- Low overhead
-- Safe execution inside the Linux kernel
-- Event-driven architecture
-- Production-ready observability
-
----
-
-# Long-Term Vision
-
-This project aims to evolve into a distributed self-healing infrastructure platform where autonomous Linux agents continuously enforce desired operating system configurations across fleets of machines through a centralized control plane.
-
-Rather than simply monitoring configuration drift, the system seeks to provide **continuous configuration compliance**, **automatic recovery**, and **fleet-wide policy enforcement** with minimal operational overhead.
-
----
-
-## License
-
-This project is licensed under the MIT License.
+This project is intended for educational, research, and systems engineering purposes. Choose an appropriate open-source license (such as MIT or Apache-2.0) before public release.
